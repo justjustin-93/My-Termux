@@ -25,6 +25,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "auto_dashboard": True,
     "theme": "dark",
     "notifications": True,
+    "cloudinary_cloud_name": "",
+    "cloudinary_api_key": "",
+    "cloudinary_api_secret": "",
+    "media_auto_sync": False,
 }
 
 

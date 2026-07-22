@@ -35,17 +35,30 @@ A Termux-only AI agent workspace for the user's phone that:
 ## What's been implemented (2026-01)
 - Full Python package with dashboard, chat, menu, scan, sync, fix, export, resume.
 - Rich terminal UI with status card + proactive next-actions card.
-- OpenRouter streaming client with ordered free-model fallback:
-  `deepseek/deepseek-chat-v3.1:free → google/gemini-2.0-flash-exp:free →
-   meta-llama/llama-3.3-70b-instruct:free → openrouter/auto`
-  Honours `Retry-After`, does not fallback mid-stream, records logs.
+- OpenRouter streaming client with ordered free-model fallback.
 - SQLite schema + full CRUD helpers for all entities.
 - Project scanner (Python/Node/Rust/Go/Java/Ruby/PHP/Docker + git detection).
 - Git helpers with PAT injection for HTTPS clones/push.
 - Self-heal: checks dirs/config/db/pip/binaries and auto-repairs safely; writes JSON log.
 - Termux notifications (silent no-op off-Termux), stub for future WhatsApp/SMS.
 - Idempotent installer & uninstaller.
-- **28 pytest tests, all passing.** Full CLI smoke-tested (dashboard, fix, scan, export).
+
+### 2026-01 — File & media storage integration
+- New `mytermux/media.py`: local media vault under `~/my-termux/media/{images,video,audio,docs,other}/`,
+  mirrored to Android-visible `~/storage/shared/MyTermux/media/`. Supports kind detection,
+  sha256 de-dup, tags, per-session/project attachment, `termux-camera-photo` capture,
+  `termux-microphone-record` recording, `termux-open` opening.
+- New `mytermux/cloud.py`: optional Cloudinary sync with correct resource-type routing
+  (image/video/raw). Upload / sync-all / pull-download / destroy / list. Fails cleanly
+  when creds missing so vault keeps working offline.
+- New CLI subcommands: `my-media {add,list,info,open,rm,attach,capture,record}`
+  and `my-cloud {status,setup,sync,up,pull,rm,list}`.
+- Config extended with `cloudinary_cloud_name / cloudinary_api_key / cloudinary_api_secret / media_auto_sync`.
+- SQLite `media` table added with schema + FK-style link to sessions.
+- Installer now `pip install cloudinary`, installs `my-media` + `my-cloud` global commands, and
+  first-run wizard optionally prompts for Cloudinary creds.
+- Self-heal covers media dirs, media schema, and Cloudinary config presence.
+- **53 pytest tests, all passing.** (25 new tests for media + cloud + CLI wiring.)
 
 ## Prioritized backlog
 - P1: Ship v1 as-is to phone; verify on real Termux.

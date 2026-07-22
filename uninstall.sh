@@ -8,7 +8,7 @@ APP_HOME="$HOME/my-termux"
 BASHRC="$HOME/.bashrc"
 
 echo "[my-termux] removing global commands..."
-for c in my-termux start-my-termux my-chat my-menu my-status my-scan my-sync my-fix my-export my-resume; do
+for c in my-termux start-my-termux my-chat my-menu my-status my-scan my-sync my-fix my-export my-resume my-media my-cloud; do
     if [ -L "$BIN_DIR/$c" ] || [ -f "$BIN_DIR/$c" ]; then
         rm -f "$BIN_DIR/$c" && echo "  - $c"
     fi

@@ -103,12 +103,12 @@ fi
 # ---------- 6. Python dependencies ----------
 say "installing python dependencies"
 python -m pip install --upgrade pip >/dev/null 2>&1 || warn "pip upgrade skipped"
-python -m pip install --quiet --upgrade httpx rich pyyaml && ok "httpx, rich, pyyaml installed" \
+python -m pip install --quiet --upgrade httpx rich pyyaml cloudinary && ok "httpx, rich, pyyaml, cloudinary installed" \
     || warn "some pip installs failed; run \`my-fix\` later"
 
 # ---------- 7. install global commands ----------
 say "installing commands into $BIN_DIR"
-COMMANDS=(my-termux start-my-termux my-chat my-menu my-status my-scan my-sync my-fix my-export my-resume)
+COMMANDS=(my-termux start-my-termux my-chat my-menu my-status my-scan my-sync my-fix my-export my-resume my-media my-cloud)
 for c in "${COMMANDS[@]}"; do
     ln -sf "$APP_DIR/bin/mytermux-dispatch" "$BIN_DIR/$c"
     ok "$c"
@@ -173,6 +173,21 @@ if not cfg.get("github_token"):
             cfg["github_token"] = t
 else:
     print("  GitHub token: already set (skipping)")
+
+# --- Cloudinary (optional, free tier) ---
+if not cfg.get("cloudinary_cloud_name"):
+    print("  Cloudinary sync is OPTIONAL (free tier at https://cloudinary.com/console).")
+    print("  Press ENTER to skip; you can run `my-cloud setup` later.")
+    cn = ask("Cloudinary cloud_name (optional)")
+    if cn:
+        ak = ask("Cloudinary api_key")
+        sk = ask("Cloudinary api_secret")
+        if ak and sk:
+            cfg["cloudinary_cloud_name"] = cn
+            cfg["cloudinary_api_key"] = ak
+            cfg["cloudinary_api_secret"] = sk
+else:
+    print("  Cloudinary: already set (skipping)")
 
 save_config(cfg)
 print("  ✓ config saved to", paths.CONFIG_FILE)

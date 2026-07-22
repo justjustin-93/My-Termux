@@ -74,10 +74,60 @@ Uninstall with `bash uninstall.sh` (asks before deleting data).
 | `my-fix`            | Run diagnostics + safe self-repair; writes JSON log in `~/my-termux/logs/` |
 | `my-export [WHAT]`  | Export `session` / `config` / `project` to `/sdcard/MyTermux/exports/` |
 | `my-resume`         | Resume the last chat session (with full history)                      |
+| `my-media …`        | Local media vault: `add`, `list`, `info`, `open`, `rm`, `attach`, `capture`, `record` |
+| `my-cloud …`        | Optional Cloudinary sync: `setup`, `status`, `sync`, `up`, `pull`, `rm`, `list` |
 
 Inside chat, slash-commands work too: `/help /new /resume /project X /goal X /task X /suggest /q`.
 
-## Data layout on the phone
+## File & media storage
+
+### Local vault (always on, offline, free)
+
+```bash
+my-media add ~/Downloads/photo.jpg              # copy into ~/my-termux/media/images/
+my-media add ~/song.mp3 --tags "music,relax"    # tag on import
+my-media list --kind image                      # filter by kind
+my-media open 3                                 # open with phone's default app
+my-media capture                                # snap a photo (needs termux-api)
+my-media record 15                              # record 15s of audio
+my-media attach 3 --session 12 --project foo    # link media to a chat/project
+my-media rm 3 --keep-file                       # unregister but keep the file
+```
+
+Files land under `~/my-termux/media/{images,video,audio,docs,other}/` and are
+mirrored to `~/storage/shared/MyTermux/media/…` so they show up in your Android
+Gallery / Files app automatically (after `termux-setup-storage` — the installer
+does that for you).
+
+### Optional Cloudinary cloud sync (free tier, 25 GB)
+
+Cloud sync is **entirely optional**. Everything above works fully offline
+without it. When you're ready:
+
+1. Sign up free at [cloudinary.com](https://cloudinary.com/console).
+2. From your Dashboard copy `cloud_name`, `api_key`, `api_secret`.
+3. Run:
+   ```bash
+   my-cloud setup           # paste the three values once
+   my-cloud sync            # upload every un-synced local media asset
+   my-cloud list            # see what's in the cloud
+   my-cloud pull 12         # restore a specific asset back to the phone
+   my-cloud rm 12 --also-local   # delete from cloud (optionally locally too)
+   ```
+
+Behind the scenes:
+
+- images → `resource_type=image`
+- videos → `resource_type=video`
+- audio  → `resource_type=video` (Cloudinary treats audio as video)
+- docs / other → `resource_type=raw`
+- Every asset lives under `my-termux/<kind>/<basename>` in your Cloudinary account,
+  so it's easy to find and delete from the Cloudinary dashboard too.
+
+If creds are missing, `my-cloud` prints a helpful error and the vault keeps
+working locally — no network, no crash.
+
+
 
 ```
 ~/my-termux/
@@ -87,9 +137,17 @@ Inside chat, slash-commands work too: `/help /new /resume /project X /goal X /ta
 ├── logs/               # repair logs (repair-YYYYMMDD-hhmmss.json)
 ├── config/config.yaml  # your API keys and preferences
 ├── backups/            # rolling config backups
-└── mytermux.db         # SQLite: sessions, messages, goals, tasks, logs, repairs, projects
+├── media/              # local media vault
+│   ├── images/
+│   ├── video/
+│   ├── audio/
+│   ├── docs/
+│   └── other/
+└── mytermux.db         # SQLite: sessions, messages, goals, tasks, logs, repairs, projects, media
 
-~/storage/shared/MyTermux/exports/   # Android-visible exports (post storage permission)
+~/storage/shared/MyTermux/
+├── exports/            # session/config/project exports (Android-visible)
+└── media/              # mirror of the local media vault (Android-visible)
 ```
 
 ## Config file (`~/my-termux/config/config.yaml`)
@@ -108,6 +166,10 @@ current_project: /data/data/com.termux/files/home/projects/foo
 auto_dashboard: true
 notifications: true
 theme: dark
+cloudinary_cloud_name: ""                # optional, for `my-cloud`
+cloudinary_api_key: ""
+cloudinary_api_secret: ""
+media_auto_sync: false
 ```
 
 ## Phone-number / messaging integration (v1 notes)

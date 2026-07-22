@@ -19,6 +19,10 @@ def _bootstrap() -> None:
     paths.ensure_dirs()
     db.init_db()
     load_config()  # creates default if missing
+    # ensure media schema + folders too (idempotent)
+    from . import media
+    media.ensure_media_dirs()
+    media._ensure_schema()
 
 
 def cmd_dashboard(args) -> int:
@@ -122,6 +126,172 @@ def cmd_resume(args) -> int:
     return chat_mod.run(resume=True)
 
 
+# --------------------------------------------------------------------------
+# media / cloud commands
+# --------------------------------------------------------------------------
+
+def _fmt_size(n: int) -> str:
+    if not n:
+        return "0"
+    for unit in ("B", "K", "M", "G"):
+        if n < 1024:
+            return f"{n:.0f}{unit}"
+        n /= 1024
+    return f"{n:.1f}T"
+
+
+def cmd_media(args) -> int:
+    _bootstrap()
+    from . import media
+    action = args.action
+
+    if action == "add":
+        src = Path(args.file).expanduser()
+        row = media.add(src, kind=args.kind or "", tags=args.tags or "",
+                        project=args.project or "", move=bool(args.move))
+        print(f"[media] added #{row['id']} kind={row['kind']} path={row['path']}")
+        return 0
+
+    if action == "list":
+        rows = media.list_media(kind=args.kind or "", project=args.project or "",
+                                limit=args.limit)
+        if not rows:
+            print("[media] (no items)")
+            return 0
+        print(f"{'ID':>4}  {'KIND':<6} {'SIZE':>7}  {'CLOUD':<6} NAME")
+        for r in rows:
+            cloud = "yes" if r.get("cloud_public_id") else "-"
+            name = r.get("original_name") or Path(r["path"]).name
+            print(f"{r['id']:>4}  {r['kind']:<6} {_fmt_size(r.get('size_bytes') or 0):>7}"
+                  f"  {cloud:<6} {name}")
+        return 0
+
+    if action == "info":
+        row = media.get(args.id)
+        for k, v in row.items():
+            print(f"  {k}: {v}")
+        return 0
+
+    if action == "open":
+        media.open_with_android(args.id)
+        return 0
+
+    if action == "rm":
+        row = media.remove(args.id, keep_file=bool(args.keep_file))
+        print(f"[media] removed #{row['id']}")
+        return 0
+
+    if action == "attach":
+        row = media.attach(args.id, session_id=args.session,
+                           project=args.project or "", tags=args.tags or "")
+        print(f"[media] attached #{row['id']} -> "
+              f"session={row.get('session_id')} project={row.get('project')} tags={row.get('tags')}")
+        return 0
+
+    if action == "capture":
+        try:
+            row = media.capture_photo(args.camera or "0")
+            print(f"[media] photo added #{row['id']} -> {row['path']}")
+            return 0
+        except RuntimeError as e:
+            print(f"[error] {e}")
+            return 1
+
+    if action == "record":
+        try:
+            row = media.record_audio(args.seconds or 10)
+            print(f"[media] audio added #{row['id']} -> {row['path']}")
+            return 0
+        except RuntimeError as e:
+            print(f"[error] {e}")
+            return 1
+
+    print("[media] unknown action")
+    return 2
+
+
+def cmd_cloud(args) -> int:
+    _bootstrap()
+    from . import cloud, media
+    action = args.action
+
+    if action == "status":
+        st = cloud.status()
+        print(f"  provider:      {st['provider']}")
+        print(f"  configured:    {st['configured']}")
+        print(f"  cloud_name:    {st['cloud_name'] or '-'}")
+        print(f"  folder_prefix: {st['folder_prefix']}")
+        return 0
+
+    if action == "setup":
+        print("Cloudinary setup — get creds at https://cloudinary.com/console")
+        cn = input("  cloud_name: ").strip()
+        ak = input("  api_key:    ").strip()
+        sk = input("  api_secret: ").strip()
+        if not (cn and ak and sk):
+            print("[error] all three values required")
+            return 1
+        cloud.setup(cn, ak, sk)
+        print("[cloud] Cloudinary credentials saved.")
+        return 0
+
+    # everything below requires configured creds
+    try:
+        cloud._configured()  # raise if not set up
+    except cloud.CloudNotConfigured as e:
+        print(f"[error] {e}")
+        return 1
+
+    if action == "sync":
+        report = cloud.sync_all()
+        print(f"[cloud] uploaded {report['uploaded']} / pending {report['pending_before']}"
+              f" (failed {report['failed']})")
+        for err in report["errors"]:
+            print(f"  ! {err}")
+        return 0 if report["failed"] == 0 else 1
+
+    if action == "up":
+        try:
+            row = cloud.upload(args.id, overwrite=bool(args.force))
+            print(f"[cloud] uploaded #{row['id']} -> {row['cloud_url']}")
+            return 0
+        except Exception as e:
+            print(f"[error] {e}")
+            return 1
+
+    if action == "pull":
+        try:
+            dest = cloud.download(args.id)
+            print(f"[cloud] downloaded #{args.id} -> {dest}")
+            return 0
+        except Exception as e:
+            print(f"[error] {e}")
+            return 1
+
+    if action == "rm":
+        try:
+            cloud.destroy_asset(args.id, also_local=bool(args.also_local))
+            print(f"[cloud] destroyed cloud copy of #{args.id}"
+                  + (" (also removed locally)" if args.also_local else ""))
+            return 0
+        except Exception as e:
+            print(f"[error] {e}")
+            return 1
+
+    if action == "list":
+        rows = cloud.list_remote(max_results=args.limit or 100)
+        if not rows:
+            print("[cloud] (no remote assets under my-termux/)")
+            return 0
+        print(f"{'RTYPE':<6} {'SIZE':>7}  PUBLIC_ID")
+        for r in rows:
+            print(f"{r['resource_type']:<6} {_fmt_size(r.get('bytes') or 0):>7}  {r['public_id']}")
+        return 0
+
+    print("[cloud] unknown action")
+    return 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="my-termux", description="my-termux AI workspace")
     sub = p.add_subparsers(dest="cmd")
@@ -149,6 +319,55 @@ def build_parser() -> argparse.ArgumentParser:
     exp_p.add_argument("what", nargs="?", default="session",
                        choices=["session", "config", "project"])
     exp_p.set_defaults(func=cmd_export)
+
+    # media
+    m_p = sub.add_parser("media", help="local media vault")
+    m_sub = m_p.add_subparsers(dest="action", required=True)
+    m_add = m_sub.add_parser("add")
+    m_add.add_argument("file")
+    m_add.add_argument("--kind", choices=["image", "video", "audio", "doc", "other"])
+    m_add.add_argument("--tags")
+    m_add.add_argument("--project")
+    m_add.add_argument("--move", action="store_true", help="move instead of copy")
+    m_list = m_sub.add_parser("list")
+    m_list.add_argument("--kind", choices=["image", "video", "audio", "doc", "other"])
+    m_list.add_argument("--project")
+    m_list.add_argument("--limit", type=int, default=50)
+    m_info = m_sub.add_parser("info")
+    m_info.add_argument("id", type=int)
+    m_open = m_sub.add_parser("open")
+    m_open.add_argument("id", type=int)
+    m_rm = m_sub.add_parser("rm")
+    m_rm.add_argument("id", type=int)
+    m_rm.add_argument("--keep-file", action="store_true")
+    m_att = m_sub.add_parser("attach")
+    m_att.add_argument("id", type=int)
+    m_att.add_argument("--session", type=int)
+    m_att.add_argument("--project")
+    m_att.add_argument("--tags")
+    m_cap = m_sub.add_parser("capture", help="camera photo via termux-api")
+    m_cap.add_argument("--camera", default="0", help='camera id ("0" back, "1" front)')
+    m_rec = m_sub.add_parser("record", help="mic recording via termux-api")
+    m_rec.add_argument("seconds", nargs="?", type=int, default=10)
+    m_p.set_defaults(func=cmd_media)
+
+    # cloud
+    c_p = sub.add_parser("cloud", help="Cloudinary sync (optional)")
+    c_sub = c_p.add_subparsers(dest="action", required=True)
+    c_sub.add_parser("status")
+    c_sub.add_parser("setup")
+    c_sub.add_parser("sync")
+    c_up = c_sub.add_parser("up")
+    c_up.add_argument("id", type=int)
+    c_up.add_argument("--force", action="store_true")
+    c_pl = c_sub.add_parser("pull")
+    c_pl.add_argument("id", type=int)
+    c_rm = c_sub.add_parser("rm")
+    c_rm.add_argument("id", type=int)
+    c_rm.add_argument("--also-local", action="store_true")
+    c_ls = c_sub.add_parser("list")
+    c_ls.add_argument("--limit", type=int, default=100)
+    c_p.set_defaults(func=cmd_cloud)
 
     return p
 

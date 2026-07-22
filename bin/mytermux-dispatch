@@ -21,6 +21,8 @@ case "$self" in
     my-fix)            sub="fix" ;;
     my-export)         sub="export" ;;
     my-resume)         sub="resume" ;;
+    my-media)          sub="media" ;;
+    my-cloud)          sub="cloud" ;;
     *)                 sub="dashboard" ;;
 esac
 

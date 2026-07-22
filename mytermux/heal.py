@@ -14,6 +14,7 @@ from .config import load_config, save_config, DEFAULT_CONFIG
 
 
 REQUIRED_PY_PACKAGES = ["httpx", "rich", "yaml"]
+OPTIONAL_PY_PACKAGES = ["cloudinary"]
 
 
 def _check(name: str, ok: bool, detail: str = "") -> Dict:
@@ -42,6 +43,24 @@ def diagnose() -> List[Dict]:
             checks.append(_check(f"pip:{pkg}", True))
         except Exception as e:
             checks.append(_check(f"pip:{pkg}", False, str(e)))
+    for pkg in OPTIONAL_PY_PACKAGES:
+        try:
+            __import__(pkg)
+            checks.append(_check(f"pip:{pkg} (optional)", True))
+        except Exception:
+            checks.append(_check(f"pip:{pkg} (optional)", False, "missing (optional)"))
+    # media dirs
+    from . import media as media_mod
+    for sub in media_mod.KIND_DIRS.values():
+        d = media_mod.MEDIA_DIR / sub
+        checks.append(_check(f"dir:media/{sub}", d.exists(), str(d)))
+    # cloudinary configured?
+    checks.append(_check(
+        "config:cloudinary (optional)",
+        bool(cfg.get("cloudinary_cloud_name") and cfg.get("cloudinary_api_key")
+             and cfg.get("cloudinary_api_secret")),
+        "set" if cfg.get("cloudinary_cloud_name") else "missing (optional)",
+    ))
     # cli deps
     for tool in ["git", "python"]:
         checks.append(_check(f"bin:{tool}", shutil.which(tool) is not None,
@@ -56,6 +75,9 @@ def diagnose() -> List[Dict]:
 def _repair_dirs() -> bool:
     paths.ensure_dirs()
     paths.try_ensure_shared_exports()
+    # media dirs
+    from . import media as media_mod
+    media_mod.ensure_media_dirs()
     return True
 
 
@@ -82,6 +104,8 @@ def _repair_config() -> bool:
 
 def _repair_db() -> bool:
     db.init_db()
+    from . import media as media_mod
+    media_mod._ensure_schema()
     return True
 
 
@@ -93,13 +117,28 @@ def _repair_pip() -> bool:
             __import__(mod)
         except Exception:
             missing.append("pyyaml" if pkg == "yaml" else pkg)
-    if not missing:
+    # optional packages — best-effort install, never block
+    optional_missing = []
+    for pkg in OPTIONAL_PY_PACKAGES:
+        try:
+            __import__(pkg)
+        except Exception:
+            optional_missing.append(pkg)
+    to_install = missing + optional_missing
+    if not to_install:
         return True
     try:
         subprocess.run(
-            [sys.executable, "-m", "pip", "install", "--upgrade", *missing],
-            check=False, timeout=180,
+            [sys.executable, "-m", "pip", "install", "--upgrade", *to_install],
+            check=False, timeout=240,
         )
+        # success is measured by required only
+        for pkg in REQUIRED_PY_PACKAGES:
+            mod = "yaml" if pkg == "yaml" else pkg
+            try:
+                __import__(mod)
+            except Exception:
+                return False
         return True
     except Exception:
         return False
