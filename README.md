@@ -28,6 +28,11 @@ all stored locally on your phone, all free.
 - **Free OpenRouter routing** with automatic fallback across free models
   (`deepseek/deepseek-chat-v3.1:free` → `google/gemini-2.0-flash-exp:free` →
   `meta-llama/llama-3.3-70b-instruct:free` → `openrouter/auto`).
+- **Real agent brain** (not just a chatbot): visible `<think>` reasoning, self-directed
+  tool use — `shell`, `read_file`, `write_file`, `list_dir`, `scan_project`, `git`,
+  `media_list`, `add_task`, `add_goal`, `notify`, `web_search`, `finish`. Multi-hop
+  loop up to `MYTERMUX_AGENT_MAX_HOPS` (default 6). Dangerous shell / protected file
+  writes ask you to confirm.
 - **Local SQLite memory** for sessions, goals, tasks, logs, repairs and projects.
 - **Proactive planner** — suggests 2–4 concrete next actions after each activity.
 - **Self-heal** — startup diagnostics + safe auto-repair, with backups.
@@ -198,6 +203,22 @@ media_auto_sync: false
 Per your own recommendation, **v1 ships with local Termux notifications only**
 (`termux-notification`). A `notify` stub is exposed in `mytermux/notify.py` so
 future integrations (WhatsApp, SMS, Telegram) can be added without touching
+the rest of the codebase — just add another sender behind the same `notify()`
+call.
+
+## OpenRouter free models — recommendation
+
+Currently the best free default is `deepseek/deepseek-chat-v3.1:free` for
+reasoning/coding, with the fast `google/gemini-2.0-flash-exp:free` and
+multilingual `meta-llama/llama-3.3-70b-instruct:free` as fallbacks, and finally
+the `openrouter/auto` router. This ordered list lives in your config; edit it
+freely — the client falls back automatically on transient errors and honours
+`Retry-After` on 429s.
+
+## License
+
+MIT — do whatever you want, but don't ship your API key to anyone.
+elegram) can be added without touching
 the rest of the codebase — just add another sender behind the same `notify()`
 call.
 

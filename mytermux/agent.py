@@ -1,0 +1,250 @@
+"""Agent loop for my-termux — the *brain*.
+
+Turns the raw OpenRouter chat wrapper into a genuine agent:
+  THINK  → shows visible <think>…</think> reasoning
+  ACT    → parses <tool name="…">{json}</tool> blocks and runs them
+  OBSERVE → feeds tool output back
+  Loops until model emits <tool name="finish"/> or plain final text
+
+Free OpenRouter models sometimes wobble on strict function-calling, so we
+use a robust text-protocol (XML wrappers with JSON args) that streams
+naturally and is easy to parse and debug.
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+from typing import Callable, Dict, List, Optional, Tuple
+
+from . import db, openrouter, planner
+from .memory import Conversation
+from .tools_agent import REGISTRY, describe_tools, is_dangerous, run_tool
+
+
+MAX_HOPS = int(os.environ.get("MYTERMUX_AGENT_MAX_HOPS", "6"))
+
+TOOL_BLOCK_RE = re.compile(
+    r"<tool\s+name=[\"']([a-z_]+)[\"']\s*>\s*(.*?)\s*</tool>",
+    re.DOTALL | re.IGNORECASE,
+)
+THINK_BLOCK_RE = re.compile(r"<think>(.*?)</think>", re.DOTALL | re.IGNORECASE)
+
+
+def _now_state_snapshot() -> str:
+    """A short local-state blurb we hand to the model each turn."""
+    st = planner.current_state()
+    parts = [
+        f"api_configured={st['api_configured']}",
+        f"github_configured={st['github_configured']}",
+        f"current_project={st['current_project'] or '(none)'}",
+        f"pending_tasks={len(st['pending_tasks'])}",
+        f"projects_registered={st['projects_count']}",
+    ]
+    return "; ".join(parts)
+
+
+AGENT_SYSTEM_PROMPT = """You are my-termux, a proactive AI AGENT living inside the user's Termux CLI on their Android phone. You do NOT just chat — you THINK, PLAN, and USE TOOLS to actually accomplish tasks and take initiative.
+
+For every user message, follow this protocol strictly:
+
+1) THINK — Wrap your private reasoning in <think>…</think>. Consider:
+   • what is the user's real underlying goal?
+   • what local context matters (current project, recent files, pending tasks)?
+   • what tools would actually help?
+   • what could go wrong or be destructive?
+
+2) ACT (optional, repeat as needed) — If a tool would help, emit exactly ONE tool call:
+   <tool name="TOOL_NAME">
+   {"arg": "value", "arg2": "value2"}
+   </tool>
+   Then STOP writing. The system will run the tool and reply with:
+   <observation>…tool output…</observation>
+   Read the observation, THINK again, then either call another tool or produce the FINAL answer.
+
+3) FINAL — When you have enough information, give the user a concise, useful answer, THEN 2–4 concrete next-step suggestions each on its own line prefixed with "• ". End with <tool name="finish">{}</tool>.
+
+TOOLS AVAILABLE:
+{TOOLS}
+
+HARD RULES:
+• Never invent tool output. Wait for the <observation>.
+• Only ONE <tool> block per turn.
+• Args must be valid JSON.
+• Prefer safe, reversible actions. If a shell command is destructive, describe the risk BEFORE calling it — the user's terminal will still ask them to confirm.
+• Never make up file contents, paths, or git output — read them with a tool.
+• Every FINAL turn MUST include the 2–4 "• …" suggestions and end with <tool name="finish">{}</tool>.
+
+STYLE:
+• Be concise. Terminal readers hate walls of text.
+• Prefer bullet points and short code blocks.
+• When you show a shell command as a suggestion, make it copy-pasteable.
+• You are running on a phone — respect small screens.
+"""
+
+
+def build_system() -> str:
+    return AGENT_SYSTEM_PROMPT.replace("{TOOLS}", describe_tools())
+
+
+def build_messages(conv: Conversation, user_text: str) -> List[Dict]:
+    history = conv.load_history()
+    trimmed = history[-conv.max_turns * 2:]
+    sys_content = build_system() + "\n\nLOCAL STATE: " + _now_state_snapshot()
+    return [{"role": "system", "content": sys_content}, *trimmed,
+            {"role": "user", "content": user_text}]
+
+
+# ---------------- parsing ---------------------------------------------------
+
+def parse_response(text: str) -> Tuple[List[str], Optional[Tuple[str, Dict]], str]:
+    """Return (thoughts, (tool_name, args) or None, visible_body)."""
+    thoughts = [m.group(1).strip() for m in THINK_BLOCK_RE.finditer(text)]
+    tool = None
+    m = TOOL_BLOCK_RE.search(text)
+    if m:
+        name = m.group(1).lower()
+        raw_args = m.group(2).strip()
+        try:
+            args = json.loads(raw_args) if raw_args else {}
+            if not isinstance(args, dict):
+                args = {"_raw": raw_args}
+        except json.JSONDecodeError:
+            args = {"_raw_json_error": raw_args}
+        tool = (name, args)
+    body = THINK_BLOCK_RE.sub("", text)
+    body = TOOL_BLOCK_RE.sub("", body).strip()
+    return thoughts, tool, body
+
+
+# ---------------- UI helpers ------------------------------------------------
+
+def _rich_console():
+    try:
+        from rich.console import Console
+        return Console()
+    except Exception:
+        return None
+
+
+def _print_thought(text: str, console) -> None:
+    if not text.strip():
+        return
+    if console is not None:
+        console.print(f"[dim italic]…thinking: {text.strip()}[/dim italic]")
+    else:
+        for line in text.strip().splitlines():
+            print(f"  … {line}")
+
+
+def _print_tool(name: str, args: Dict, console) -> None:
+    args_short = json.dumps(args, ensure_ascii=False)
+    if len(args_short) > 160:
+        args_short = args_short[:157] + "..."
+    if console is not None:
+        console.print(f"[bold magenta]▶ tool[/bold magenta] [bold]{name}[/bold] "
+                      f"[dim]{args_short}[/dim]")
+    else:
+        print(f"▶ tool {name} {args_short}")
+
+
+def _print_observation(obs: str, console) -> None:
+    truncated = obs if len(obs) < 1200 else obs[:1200] + f"\n… [+{len(obs)-1200} chars]"
+    if console is not None:
+        console.print(f"[green]◀ observation[/green]\n[dim]{truncated}[/dim]")
+    else:
+        print("◀ observation")
+        print(truncated)
+
+
+def _print_final(body: str, console) -> None:
+    if console is not None:
+        console.print(body)
+    else:
+        print(body)
+
+
+def _confirm(msg: str) -> bool:
+    try:
+        v = input(f"\n[confirm] {msg} (y/N): ").strip().lower()
+    except EOFError:
+        return False
+    return v in ("y", "yes")
+
+
+# ---------------- main loop -------------------------------------------------
+
+def run_turn(conv: Conversation, user_text: str,
+             confirm_fn: Optional[Callable[[str], bool]] = None) -> str:
+    """Run a single agent turn (may involve many hops). Returns the final body."""
+    console = _rich_console()
+    confirm_fn = confirm_fn or _confirm
+
+    conv.record_user(user_text)
+    messages = build_messages(conv, user_text)
+
+    final_body = ""
+    last_model = ""
+    for hop in range(MAX_HOPS):
+        if console is not None:
+            console.print(f"\n[bold cyan]agent ›[/bold cyan] [dim](hop {hop+1}/{MAX_HOPS})[/dim]")
+        else:
+            print(f"\nagent › (hop {hop+1}/{MAX_HOPS})")
+
+        # stream tokens to the user as they come
+        buf: List[str] = []
+
+        def on_delta(chunk: str) -> None:
+            buf.append(chunk)
+            sys.stdout.write(chunk)
+            sys.stdout.flush()
+
+        try:
+            text, model = openrouter.chat_stream(messages, on_delta=on_delta)
+        except RuntimeError as e:
+            print(f"\n[error] {e}")
+            db.log("error", "agent", str(e))
+            return ""
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        last_model = model
+
+        thoughts, tool_call, body = parse_response(text)
+        for th in thoughts:
+            _print_thought(th, console)
+
+        if tool_call is None:
+            # model produced a final answer without calling finish — accept it anyway
+            final_body = body or text
+            break
+
+        name, args = tool_call
+        _print_tool(name, args, console)
+
+        if name == "finish":
+            final_body = body
+            break
+
+        if is_dangerous(name, args):
+            summary = json.dumps(args, ensure_ascii=False)[:200]
+            if not confirm_fn(f"run tool `{name}` with {summary}?"):
+                observation = "user_denied_tool_call"
+            else:
+                observation = run_tool(name, args)
+        else:
+            observation = run_tool(name, args)
+
+        _print_observation(observation, console)
+
+        # feed the model
+        messages.append({"role": "assistant", "content": text})
+        messages.append({"role": "user",
+                         "content": f"<observation>\n{observation}\n</observation>"})
+    else:
+        final_body = "[agent] reached max hops without a final answer — try rephrasing."
+
+    if final_body:
+        _print_final(final_body, console)
+    conv.record_assistant(final_body, model=last_model)
+    return final_body
