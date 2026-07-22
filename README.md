@@ -38,14 +38,35 @@ all stored locally on your phone, all free.
 
 ## Install (Termux, phone only)
 
+### Quick install from a GitHub repo
+
 ```bash
 pkg update && pkg install -y git
-git clone https://github.com/your-user/my-termux ~/my-termux-src   # or copy the folder in
-cd ~/my-termux-src
-bash install.sh
+git clone https://github.com/<you>/<repo>.git ~/my-termux-src
+cd ~/my-termux-src && bash install.sh
 ```
 
-The installer:
+### Or copy the source to your phone manually
+Zip the source, put it somewhere on your phone (Drive / USB / email), then:
+```bash
+cd ~
+unzip /storage/shared/Download/my-termux.zip -d my-termux-src
+cd my-termux-src && bash install.sh
+```
+
+### Finding the correct photo path
+Camera photos live at `~/storage/shared/DCIM/Camera/` **after** you've granted
+storage permission (the installer does this via `termux-setup-storage`). To find
+a real filename, list the folder first — don't type `<some-photo>.jpg` literally:
+
+```bash
+ls ~/storage/shared/DCIM/Camera/
+my-media add ~/storage/shared/DCIM/Camera/IMG_<TAB>     # Tab auto-completes
+```
+
+### What the installer does
+
+### What the installer does
 
 1. Installs `python`, `git`, `termux-api`.
 2. Copies source to `~/my-termux/app/`.

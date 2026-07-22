@@ -147,8 +147,32 @@ def cmd_media(args) -> int:
 
     if action == "add":
         src = Path(args.file).expanduser()
-        row = media.add(src, kind=args.kind or "", tags=args.tags or "",
-                        project=args.project or "", move=bool(args.move))
+        # helpful pre-check: catch obvious mistakes with a friendly message
+        if str(src).startswith("<") or "<" in str(src) or ">" in str(src):
+            print(f"[error] '{src}' looks like a placeholder. "
+                  f"Replace it with a real filename, e.g.\n"
+                  f"        my-media add ~/storage/shared/DCIM/Camera/IMG_20240115_143022.jpg\n"
+                  f"        (use Tab-completion: type the folder + start of name, then press Tab)")
+            return 1
+        if not src.exists():
+            print(f"[error] file not found: {src}")
+            print("  tip: run `ls ~/storage/shared/DCIM/Camera/` to see your photos,")
+            print("       or make sure you ran `termux-setup-storage` at least once.")
+            return 1
+        if src.is_dir():
+            print(f"[error] '{src}' is a directory, not a file.")
+            print("  add one file at a time, e.g. my-media add <path>/photo.jpg")
+            return 1
+        try:
+            row = media.add(src, kind=args.kind or "", tags=args.tags or "",
+                            project=args.project or "", move=bool(args.move))
+        except FileNotFoundError as e:
+            print(f"[error] {e}")
+            return 1
+        except PermissionError as e:
+            print(f"[error] permission denied: {e}")
+            print("  tip: for files under ~/storage/shared/... run `termux-setup-storage` first.")
+            return 1
         print(f"[media] added #{row['id']} kind={row['kind']} path={row['path']}")
         return 0
 
@@ -156,7 +180,7 @@ def cmd_media(args) -> int:
         rows = media.list_media(kind=args.kind or "", project=args.project or "",
                                 limit=args.limit)
         if not rows:
-            print("[media] (no items)")
+            print("[media] (no items)  tip: `my-media add <path-to-file>` to import your first item")
             return 0
         print(f"{'ID':>4}  {'KIND':<6} {'SIZE':>7}  {'CLOUD':<6} NAME")
         for r in rows:
@@ -167,23 +191,39 @@ def cmd_media(args) -> int:
         return 0
 
     if action == "info":
-        row = media.get(args.id)
+        try:
+            row = media.get(args.id)
+        except KeyError as e:
+            print(f"[error] {e}. Use `my-media list` to see valid IDs.")
+            return 1
         for k, v in row.items():
             print(f"  {k}: {v}")
         return 0
 
     if action == "open":
-        media.open_with_android(args.id)
+        try:
+            media.open_with_android(args.id)
+        except KeyError as e:
+            print(f"[error] {e}. Use `my-media list` to see valid IDs.")
+            return 1
         return 0
 
     if action == "rm":
-        row = media.remove(args.id, keep_file=bool(args.keep_file))
+        try:
+            row = media.remove(args.id, keep_file=bool(args.keep_file))
+        except KeyError as e:
+            print(f"[error] {e}. Use `my-media list` to see valid IDs.")
+            return 1
         print(f"[media] removed #{row['id']}")
         return 0
 
     if action == "attach":
-        row = media.attach(args.id, session_id=args.session,
-                           project=args.project or "", tags=args.tags or "")
+        try:
+            row = media.attach(args.id, session_id=args.session,
+                               project=args.project or "", tags=args.tags or "")
+        except KeyError as e:
+            print(f"[error] {e}. Use `my-media list` to see valid IDs.")
+            return 1
         print(f"[media] attached #{row['id']} -> "
               f"session={row.get('session_id')} project={row.get('project')} tags={row.get('tags')}")
         return 0
