@@ -43,7 +43,18 @@ A Termux-only AI agent workspace for the user's phone that:
 - Termux notifications (silent no-op off-Termux), stub for future WhatsApp/SMS.
 - Idempotent installer & uninstaller.
 
-### 2026-01 — File & media storage integration
+### 2026-01 — Agent brain upgrade
+- **New `mytermux/tools_agent.py`**: registry of 12 tools (`shell`, `read_file`, `write_file`,
+  `list_dir`, `scan_project`, `git`, `media_list`, `add_task`, `add_goal`, `notify`, `web_search`,
+  `finish`) with typed schemas, safety classification, and a `run_tool()` dispatcher.
+- **New `mytermux/agent.py`**: real agent loop with visible `<think>` reasoning,
+  `<tool name="…">{json}</tool>` blocks, multi-hop tool/observation cycles up to
+  `MYTERMUX_AGENT_MAX_HOPS` (default 6). Dangerous shell + protected file writes ask
+  the user to confirm via `confirm_fn`.
+- **Rewrote `mytermux/chat.py`**: agent mode by default, `/plain` toggles the old
+  dialogue mode, `/agent` switches back, `/tools` lists available tools.
+- **Free web search** via DuckDuckGo Instant Answer API (no key needed).
+- **130 pytest tests, all passing** (33 agent-loop tests + 31 edge-case tests added).
 - New `mytermux/media.py`: local media vault under `~/my-termux/media/{images,video,audio,docs,other}/`,
   mirrored to Android-visible `~/storage/shared/MyTermux/media/`. Supports kind detection,
   sha256 de-dup, tags, per-session/project attachment, `termux-camera-photo` capture,
