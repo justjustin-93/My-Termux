@@ -74,7 +74,8 @@ def test_parse_response_case_insensitive_tags():
 def test_registry_describe_tools_lists_all():
     from mytermux.tools_agent import REGISTRY, describe_tools
     desc = describe_tools()
-    for name in ("shell", "read_file", "write_file", "list_dir", "scan_project",
+    for name in ("shell", "run_script", "install_package", "copy_file", "make_dir", "remove_path",
+                 "read_file", "write_file", "list_dir", "scan_project",
                  "git", "media_list", "add_task", "add_goal", "notify",
                  "web_search", "finish"):
         assert name in REGISTRY
@@ -98,6 +99,29 @@ def test_tool_read_file(tmp_path):
     out = run_tool("read_file", {"path": str(p)})
     assert "hello world" in out
     assert "bytes_read: 11" in out
+
+
+def test_tool_make_dir_and_copy_file(tmp_path):
+    from mytermux.tools_agent import run_tool
+    d = tmp_path / "subdir"
+    out = run_tool("make_dir", {"path": str(d)})
+    assert "created directory" in out
+    assert d.exists() and d.is_dir()
+    src = tmp_path / "src.txt"
+    src.write_text("ok")
+    dst = d / "dst.txt"
+    out2 = run_tool("copy_file", {"src": str(src), "dst": str(dst)})
+    assert "copied" in out2
+    assert dst.exists() and dst.read_text() == "ok"
+
+
+def test_tool_remove_path(tmp_path):
+    from mytermux.tools_agent import run_tool
+    p = tmp_path / "to_delete.txt"
+    p.write_text("bye")
+    out = run_tool("remove_path", {"path": str(p)})
+    assert "removed" in out
+    assert not p.exists()
 
 
 def test_tool_read_file_missing(tmp_path):
@@ -177,6 +201,23 @@ def test_tool_git_not_a_repo(tmp_path):
     from mytermux.tools_agent import run_tool
     out = run_tool("git", {"action": "status", "path": str(tmp_path)})
     assert "not a git repo" in out
+
+
+def test_tool_git_status_commit(tmp_path):
+    from mytermux.tools_agent import run_tool
+    import subprocess
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+    (repo / "file.txt").write_text("hello")
+    out = run_tool("git", {"action": "status", "path": str(repo)})
+    assert "?? file.txt" in out or "Untracked files" in out
+    rc = run_tool("git", {"action": "commit", "path": str(repo), "message": "first commit"})
+    assert "error" not in rc.lower()
+    assert "committed" in rc.lower() or "files changed" in rc.lower() or "branch" not in rc.lower()
 
 
 def test_tool_finish_returns_marker():

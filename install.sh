@@ -108,7 +108,7 @@ python -m pip install --quiet --upgrade httpx rich pyyaml cloudinary && ok "http
 
 # ---------- 7. install global commands ----------
 say "installing commands into $BIN_DIR"
-COMMANDS=(my-termux start-my-termux my-chat my-menu my-status my-scan my-sync my-fix my-export my-resume my-media my-cloud)
+COMMANDS=(my-termux start-my-termux my-chat my-menu my-status my-scan my-sync my-fix my-export my-import my-resume my-media my-cloud)
 for c in "${COMMANDS[@]}"; do
     ln -sf "$APP_DIR/bin/mytermux-dispatch" "$BIN_DIR/$c"
     ok "$c"

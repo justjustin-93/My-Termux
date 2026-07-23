@@ -69,6 +69,12 @@ def next_actions() -> List[Dict]:
                 "action": "Re-scan to refresh dependency and git status.",
                 "priority": 2,
             })
+            actions.append({
+                "cmd": f"my-chat",
+                "why": f"Keep momentum on {p.name}.",
+                "action": "Ask the agent to inspect files, tests, or TODOs in the current project.",
+                "priority": 2,
+            })
 
     if st["pending_tasks"]:
         top = st["pending_tasks"][0]
@@ -87,6 +93,14 @@ def next_actions() -> List[Dict]:
             "priority": 4,
         })
 
+    if st["projects_count"]:
+        actions.append({
+            "cmd": "my-scan .",
+            "why": "You already have registered projects.",
+            "action": "Scan the current directory or switch to another project to broaden the workspace.",
+            "priority": 4,
+        })
+
     actions.append({
         "cmd": "my-fix",
         "why": "Keep your environment healthy.",
@@ -94,9 +108,15 @@ def next_actions() -> List[Dict]:
         "priority": 5,
     })
     actions.append({
+        "cmd": "my-media capture",
+        "why": "You are on a phone with Termux media tools.",
+        "action": "Capture a photo or record audio if the task involves media or evidence.",
+        "priority": 5,
+    })
+    actions.append({
         "cmd": "my-chat",
         "why": "Jump straight in.",
-        "action": "Ask the agent anything.",
+        "action": "Ask the agent anything, or ask it to propose a next step from the current context.",
         "priority": 5,
     })
 

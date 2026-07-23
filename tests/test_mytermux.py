@@ -192,6 +192,40 @@ def test_export_project_creates_archive(tmp_path):
     assert out.endswith(".tar.gz")
 
 
+def test_import_session_restores_messages(tmp_path):
+    from mytermux import db, export as exp
+    db.init_db()
+    sid = db.start_session("p")
+    db.add_message(sid, "user", "hi")
+    db.add_message(sid, "assistant", "yo")
+    out = exp.export("session")
+
+    with db.connect() as conn:
+        conn.execute("DELETE FROM messages")
+        conn.execute("DELETE FROM sessions")
+
+    restored = exp.import_export("session", out)
+    assert Path(restored).exists()
+    with db.connect() as conn:
+        rows = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+        msgs = conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0]
+    assert rows == 1
+    assert msgs == 2
+
+
+def test_import_project_extracts_archive(tmp_path):
+    from mytermux import config, export as exp
+    proj = tmp_path / "myproj"
+    proj.mkdir()
+    (proj / "file.txt").write_text("x")
+    config.set_value("current_project", str(proj))
+    archive = exp.export("project")
+
+    restored = exp.import_export("project", archive)
+    assert Path(restored).exists()
+    assert (Path(restored) / "file.txt").exists()
+
+
 def test_openrouter_requires_key():
     from mytermux import openrouter
     with pytest.raises(RuntimeError) as ei:

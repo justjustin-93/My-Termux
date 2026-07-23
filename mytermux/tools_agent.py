@@ -20,6 +20,61 @@ from typing import Callable, Dict, List
 from . import db, scanner, tools, git_ops, notify, media
 
 
+def _tool_run_script(args: Dict) -> str:
+    path = Path(args.get("path", "")).expanduser()
+    if not path.exists():
+        return f"error: script not found: {path}"
+    if not path.is_file():
+        return f"error: not a file: {path}"
+    cmd = args.get("cmd") or ""
+    if cmd:
+        shell_cmd = f"bash {path} {cmd}".strip()
+    else:
+        shell_cmd = f"bash {path}"
+    cwd = args.get("cwd")
+    rc, out, err = tools.run_shell(shell_cmd, cwd=Path(cwd).expanduser() if cwd else None,
+                                    timeout=int(args.get("timeout", 120)))
+    return _clip(f"exit_code: {rc}\nstdout:\n{out}\nstderr:\n{err}")
+
+
+def _tool_install_package(args: Dict) -> str:
+    pkg = (args.get("package") or "").strip()
+    if not pkg:
+        return "error: missing 'package'"
+    cmd = f"pkg install -y {pkg}"
+    rc, out, err = tools.run_shell(cmd, timeout=int(args.get("timeout", 120)))
+    return _clip(f"exit_code: {rc}\nstdout:\n{out}\nstderr:\n{err}")
+
+
+def _tool_copy_file(args: Dict) -> str:
+    src = Path(args.get("src", "")).expanduser()
+    dst = Path(args.get("dst", "")).expanduser()
+    if not src.exists():
+        return f"error: source not found: {src}"
+    if not src.is_file():
+        return f"error: source is not a file: {src}"
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    return f"copied {src} -> {dst}"
+
+
+def _tool_make_dir(args: Dict) -> str:
+    path = Path(args.get("path", "")).expanduser()
+    path.mkdir(parents=True, exist_ok=True)
+    return f"created directory: {path}"
+
+
+def _tool_remove_path(args: Dict) -> str:
+    path = Path(args.get("path", "")).expanduser()
+    if not path.exists():
+        return f"error: not found: {path}"
+    if path.is_dir():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+    return f"removed: {path}"
+
+
 MAX_OBSERVATION_CHARS = 4000
 
 
@@ -83,7 +138,17 @@ def _tool_scan_project(args: Dict) -> str:
 
 def _tool_git(args: Dict) -> str:
     action = args.get("action", "status")
-    repo = Path(args.get("path", ".")).expanduser().resolve()
+    repo_arg = args.get("path", ".")
+    if action == "clone":
+        url = args.get("url", "").strip()
+        dest = Path(args.get("dest", "")).expanduser()
+        if not url:
+            return "error: missing 'url' for clone"
+        if not dest:
+            return "error: missing 'dest' for clone"
+        rc, out, err = git_ops.clone(url, dest)
+        return _clip(out or err)
+    repo = Path(repo_arg).expanduser().resolve()
     if not (repo / ".git").exists():
         return f"error: not a git repo: {repo}"
     if action == "status":
@@ -97,7 +162,19 @@ def _tool_git(args: Dict) -> str:
     if action == "branch":
         rc, out, err = git_ops.run(["git", "branch", "-vv"], cwd=repo)
         return _clip(out or err)
-    return f"error: unknown git action '{action}'. Allowed: status, log, diff, branch."
+    if action == "commit":
+        message = args.get("message", "update")
+        rc, out, err = git_ops.commit_all(repo, message)
+        return _clip(out or err)
+    if action == "push":
+        remote = args.get("remote", "origin")
+        branch = args.get("branch", "")
+        rc, out, err = git_ops.push(repo, remote=remote, branch=branch)
+        return _clip(out or err)
+    if action == "pull":
+        rc, out, err = git_ops.pull(repo)
+        return _clip(out or err)
+    return f"error: unknown git action '{action}'. Allowed: status, log, diff, branch, commit, push, pull, clone."
 
 
 def _tool_media_list(args: Dict) -> str:
@@ -190,6 +267,27 @@ REGISTRY: Dict[str, Tool] = {
                   {"cmd": "command string", "cwd": "optional working dir",
                    "timeout": "seconds (default 30)"},
                   _tool_shell, safety="confirm"),
+    "run_script": Tool("run_script",
+                       "Execute a shell script file, e.g. install.sh or a deployment payload.",
+                       {"path": "script path", "cmd": "optional extra args", "cwd": "optional working dir",
+                        "timeout": "seconds (default 120)"},
+                       _tool_run_script, safety="confirm"),
+    "install_package": Tool("install_package",
+                             "Install a Termux package with pkg install -y.",
+                             {"package": "package name", "timeout": "seconds (default 120)"},
+                             _tool_install_package, safety="confirm"),
+    "copy_file": Tool("copy_file",
+                      "Copy a file from src to dst.",
+                      {"src": "source file", "dst": "destination file"},
+                      _tool_copy_file, safety="confirm"),
+    "make_dir": Tool("make_dir",
+                     "Create a directory (and parents) if missing.",
+                     {"path": "directory path"},
+                     _tool_make_dir, safety="safe"),
+    "remove_path": Tool("remove_path",
+                         "Remove a file or directory. Use carefully.",
+                         {"path": "file or directory path"},
+                         _tool_remove_path, safety="confirm"),
     "read_file": Tool("read_file",
                       "Read a file's contents (first max_bytes bytes).",
                       {"path": "file path", "max_bytes": "int, default 8000"},
@@ -207,10 +305,9 @@ REGISTRY: Dict[str, Tool] = {
                          {"path": "project root"},
                          _tool_scan_project, safety="safe"),
     "git": Tool("git",
-                "Read-only git ops on a local repo. Actions: status, log, diff, branch. "
-                "Push/commit are intentionally NOT available — user runs those with `my-sync`.",
-                {"action": "status|log|diff|branch", "path": "repo path"},
-                _tool_git, safety="safe"),
+                "Git helper for local repos. Actions: status, log, diff, branch, commit, push, pull, clone.",
+                {"action": "status|log|diff|branch|commit|push|pull|clone", "path": "repo path", "message": "commit message", "remote": "remote name", "branch": "branch name", "url": "clone URL", "dest": "clone destination"},
+                _tool_git, safety="confirm"),
     "media_list": Tool("media_list",
                        "List entries in the local media vault.",
                        {"kind": "optional: image|video|audio|doc|other"},
@@ -271,6 +368,8 @@ def is_dangerous(name: str, args: Dict) -> bool:
     if t.safety == "confirm":
         if name == "shell":
             return tools.is_dangerous(args.get("cmd", ""))
+        if name in {"run_script", "install_package", "copy_file", "remove_path", "git"}:
+            return True
         if name == "write_file":
             # writing to protected paths always confirms
             p = str(Path(args.get("path", "")).expanduser())

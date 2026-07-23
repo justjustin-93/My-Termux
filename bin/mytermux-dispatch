@@ -20,6 +20,7 @@ case "$self" in
     my-sync)           sub="sync" ;;
     my-fix)            sub="fix" ;;
     my-export)         sub="export" ;;
+    my-import)         sub="import" ;;
     my-resume)         sub="resume" ;;
     my-media)          sub="media" ;;
     my-cloud)          sub="cloud" ;;

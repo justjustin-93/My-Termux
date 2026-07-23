@@ -41,6 +41,10 @@ def _now_state_snapshot() -> str:
         f"current_project={st['current_project'] or '(none)'}",
         f"pending_tasks={len(st['pending_tasks'])}",
         f"projects_registered={st['projects_count']}",
+        "termux_environment=available",
+        "termux_notifications=enabled",
+        "termux_media_capture=available",
+        "termux_storage_access=available",
     ]
     return "; ".join(parts)
 
@@ -51,9 +55,12 @@ For every user message, follow this protocol strictly:
 
 1) THINK — Wrap your private reasoning in <think>…</think>. Consider:
    • what is the user's real underlying goal?
-   • what local context matters (current project, recent files, pending tasks)?
-   • what tools would actually help?
-   • what could go wrong or be destructive?
+   • what local context matters (current project, recent files, pending tasks, recent session history)?
+   • what useful next move would actually advance the work on this Android/Termux device?
+   • whether the user might want to use installed Termux capabilities such as notifications, media capture, storage access, scripts, or package installs.
+   • whether the user might want a related follow-up, a different angle, or a broader plan rather than a narrow answer.
+   • what tools would actually help.
+   • what could go wrong or be destructive.
 
 2) ACT (optional, repeat as needed) — If a tool would help, emit exactly ONE tool call:
    <tool name="TOOL_NAME">
@@ -63,7 +70,7 @@ For every user message, follow this protocol strictly:
    <observation>…tool output…</observation>
    Read the observation, THINK again, then either call another tool or produce the FINAL answer.
 
-3) FINAL — When you have enough information, give the user a concise, useful answer, THEN 2–4 concrete next-step suggestions each on its own line prefixed with "• ". End with <tool name="finish">{}</tool>.
+3) FINAL — When you have enough information, give the user a concise, useful answer, THEN 2–4 concrete next-step suggestions each on its own line prefixed with "• ". Prefer suggestions that broaden, connect, or continue the work rather than repeating the same topic. End with <tool name="finish">{}</tool>.
 
 TOOLS AVAILABLE:
 {TOOLS}
@@ -75,12 +82,15 @@ HARD RULES:
 • Prefer safe, reversible actions. If a shell command is destructive, describe the risk BEFORE calling it — the user's terminal will still ask them to confirm.
 • Never make up file contents, paths, or git output — read them with a tool.
 • Every FINAL turn MUST include the 2–4 "• …" suggestions and end with <tool name="finish">{}</tool>.
+• If the user asks a simple question, still offer one helpful next move or alternative angle.
+• If the user is stuck, suggest a different tack, not just a rephrase of the same ask.
 
 STYLE:
 • Be concise. Terminal readers hate walls of text.
 • Prefer bullet points and short code blocks.
 • When you show a shell command as a suggestion, make it copy-pasteable.
 • You are running on a phone — respect small screens.
+• Be proactive: connect the user's task to nearby context, pending work, or the next best action.
 """
 
 
@@ -175,6 +185,17 @@ def _confirm(msg: str) -> bool:
 
 # ---------------- main loop -------------------------------------------------
 
+def _compose_followup_prompt(user_text: str, last_body: str) -> str:
+    if not last_body:
+        return user_text
+    return (
+        f"{user_text}\n\n"
+        "Keep the conversation moving. If the user’s request is still narrow,"
+        " suggest a related next step or a different angle instead of staying on the same topic."
+        f"\nPrevious assistant answer:\n{last_body}"
+    )
+
+
 def run_turn(conv: Conversation, user_text: str,
              confirm_fn: Optional[Callable[[str], bool]] = None) -> str:
     """Run a single agent turn (may involve many hops). Returns the final body."""
@@ -182,7 +203,15 @@ def run_turn(conv: Conversation, user_text: str,
     confirm_fn = confirm_fn or _confirm
 
     conv.record_user(user_text)
-    messages = build_messages(conv, user_text)
+    recent = conv.load_history()
+    last_assistant = ""
+    if recent:
+        for item in reversed(recent):
+            if item.get("role") == "assistant" and item.get("content"):
+                last_assistant = item["content"]
+                break
+    followup_user_text = _compose_followup_prompt(user_text, last_assistant)
+    messages = build_messages(conv, followup_user_text)
 
     final_body = ""
     last_model = ""

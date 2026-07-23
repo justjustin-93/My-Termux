@@ -121,6 +121,18 @@ def cmd_export(args) -> int:
         return 1
 
 
+def cmd_import(args) -> int:
+    _bootstrap()
+    what = args.what or "session"
+    try:
+        path = export_mod.import_export(what, args.path)
+        print(f"[my-termux] imported {what}: {path}")
+        return 0
+    except (FileNotFoundError, RuntimeError, ValueError) as e:
+        print(f"[error] {e}")
+        return 1
+
+
 def cmd_resume(args) -> int:
     _bootstrap()
     return chat_mod.run(resume=True)
@@ -359,6 +371,12 @@ def build_parser() -> argparse.ArgumentParser:
     exp_p.add_argument("what", nargs="?", default="session",
                        choices=["session", "config", "project"])
     exp_p.set_defaults(func=cmd_export)
+
+    imp_p = sub.add_parser("import")
+    imp_p.add_argument("what", nargs="?", default="session",
+                       choices=["session", "config", "project"])
+    imp_p.add_argument("path")
+    imp_p.set_defaults(func=cmd_import)
 
     # media
     m_p = sub.add_parser("media", help="local media vault")
