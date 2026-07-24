@@ -87,6 +87,38 @@ def test_cmd_dashboard_runs_startup_heal(monkeypatch):
     assert cli.cmd_dashboard(argparse.Namespace()) == 0
 
 
+def test_startup_heal_reports_required_and_optional_items(monkeypatch, capsys):
+    from mytermux import cli
+
+    monkeypatch.setattr(cli, "_bootstrap", lambda: None)
+    monkeypatch.setattr(cli.ui, "dashboard", lambda show_banner=True: None)
+    monkeypatch.setattr(cli.heal_mod, "heal", lambda: {
+        "after": [
+            {"name": "config:openrouter_key", "ok": False, "detail": "missing"},
+            {"name": "pip:httpx", "ok": False, "detail": "missing"},
+            {"name": "pip:cloudinary (optional)", "ok": False, "detail": "missing (optional)"},
+        ],
+        "repairs": [],
+    })
+
+    cli.cmd_dashboard(argparse.Namespace())
+    out = capsys.readouterr().out
+    assert "startup notice" in out
+    assert "config:openrouter_key" in out
+    assert "optional items still missing" in out
+    assert "pip:cloudinary" in out
+
+
+def test_cmd_upgrade_runs_heal_and_sync(monkeypatch):
+    from mytermux import cli
+
+    monkeypatch.setattr(cli, "_bootstrap", lambda: None)
+    monkeypatch.setattr(cli.heal_mod, "heal", lambda: {"after": [], "repairs": []})
+    monkeypatch.setattr(cli.git_ops, "sync_repo", lambda repo, auto_push=False: {"branch": "main", "summary": "up to date", "status": ""})
+
+    assert cli.cmd_upgrade(argparse.Namespace(path=".")) == 0
+
+
 def test_scanner_detects_python_project(tmp_path):
     from mytermux import scanner
     proj = tmp_path / "demo"

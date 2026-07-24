@@ -30,6 +30,16 @@ def _run_startup_heal() -> None:
     fails = [c for c in report["after"] if not c["ok"] and "optional" not in c["name"]]
     if fails:
         print(f"[my-termux] startup notice: {len(fails)} issue(s) remain — run `my-fix`.")
+        for item in fails:
+            print(f"  - {item['name']}: {item['detail'] or 'missing'}")
+    else:
+        print("[my-termux] startup ready: required checks passed.")
+
+    optional_missing = [c for c in report["after"] if not c["ok"] and "optional" in c["name"]]
+    if optional_missing:
+        print("[my-termux] optional items still missing:")
+        for item in optional_missing:
+            print(f"  - {item['name']}: {item['detail'] or 'missing'}")
 
 
 def cmd_dashboard(args) -> int:
@@ -114,6 +124,18 @@ def cmd_fix(args) -> int:
         print(f"  {mark} {c['name']:<32} {c['detail']}")
     if "log_path" in report:
         print(f"log: {report['log_path']}")
+    return 0
+
+
+def cmd_upgrade(args) -> int:
+    _bootstrap()
+    heal_mod.heal()
+    path = Path(getattr(args, "path", ".") or ".").expanduser().resolve()
+    info = git_ops.sync_repo(path, auto_push=False)
+    print(f"[upgrade] branch: {info['branch']}")
+    print(f"[upgrade] {info['summary']}")
+    if info.get("status"):
+        print(info["status"])
     return 0
 
 
@@ -363,6 +385,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("status").set_defaults(func=cmd_status)
     sub.add_parser("resume").set_defaults(func=cmd_resume)
     sub.add_parser("fix").set_defaults(func=cmd_fix)
+
+    upgrade_p = sub.add_parser("upgrade")
+    upgrade_p.add_argument("path", nargs="?", default=".")
+    upgrade_p.set_defaults(func=cmd_upgrade)
 
     scan_p = sub.add_parser("scan")
     scan_p.add_argument("path", nargs="?", default=".")

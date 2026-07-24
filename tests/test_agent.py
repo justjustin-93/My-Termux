@@ -67,6 +67,14 @@ def test_parse_response_case_insensitive_tags():
     assert tool == ("finish", {})
 
 
+def test_system_prompt_is_more_flexible_about_protocol():
+    from mytermux.agent import build_system
+    prompt = build_system()
+    assert "follow this protocol strictly" not in prompt.lower()
+    assert "flexible" in prompt.lower()
+    assert "natural language" in prompt.lower()
+
+
 # --------------------------------------------------------------------------
 # tool registry
 # --------------------------------------------------------------------------
