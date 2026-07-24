@@ -1,4 +1,5 @@
 """Smoke + unit tests for the my-termux package."""
+import argparse
 import json
 import subprocess
 from pathlib import Path
@@ -73,6 +74,17 @@ def test_planner_next_actions_flags_missing_key():
     reasons = " ".join(a["why"] for a in actions)
     assert "OpenRouter" in reasons, "must nag when API key missing"
     assert any(a["cmd"] == "my-fix" for a in actions)
+
+
+def test_cmd_dashboard_runs_startup_heal(monkeypatch):
+    from mytermux import cli
+
+    calls = []
+    monkeypatch.setattr(cli, "_bootstrap", lambda: None)
+    monkeypatch.setattr(cli.ui, "dashboard", lambda show_banner=True: None)
+    monkeypatch.setattr(cli.heal_mod, "heal", lambda: {"after": [], "repairs": []})
+
+    assert cli.cmd_dashboard(argparse.Namespace()) == 0
 
 
 def test_scanner_detects_python_project(tmp_path):

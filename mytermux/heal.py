@@ -110,6 +110,10 @@ def _repair_db() -> bool:
 
 
 def _repair_pip() -> bool:
+    cfg = load_config()
+    if not cfg.get("auto_pip_install", True):
+        return True
+
     missing = []
     for pkg in REQUIRED_PY_PACKAGES:
         mod = "yaml" if pkg == "yaml" else pkg

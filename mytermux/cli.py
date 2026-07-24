@@ -25,8 +25,16 @@ def _bootstrap() -> None:
     media._ensure_schema()
 
 
+def _run_startup_heal() -> None:
+    report = heal_mod.heal()
+    fails = [c for c in report["after"] if not c["ok"] and "optional" not in c["name"]]
+    if fails:
+        print(f"[my-termux] startup notice: {len(fails)} issue(s) remain — run `my-fix`.")
+
+
 def cmd_dashboard(args) -> int:
     _bootstrap()
+    _run_startup_heal()
     ui.dashboard(show_banner=True)
     return 0
 
@@ -34,11 +42,7 @@ def cmd_dashboard(args) -> int:
 def cmd_start(args) -> int:
     """Full startup: heal (if needed) then dashboard."""
     _bootstrap()
-    # quick auto-heal on start (safe operations only)
-    report = heal_mod.heal()
-    fails = [c for c in report["after"] if not c["ok"] and "optional" not in c["name"]]
-    if fails:
-        print(f"[my-termux] startup notice: {len(fails)} issue(s) remain — run `my-fix`.")
+    _run_startup_heal()
     ui.dashboard(show_banner=True)
     return 0
 

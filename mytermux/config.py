@@ -23,6 +23,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "github_username": "",
     "current_project": "",
     "auto_dashboard": True,
+    "auto_pip_install": True,
     "theme": "dark",
     "notifications": True,
     "cloudinary_cloud_name": "",
