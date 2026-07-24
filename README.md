@@ -13,9 +13,9 @@ all stored locally on your phone, all free.
    │   ✓ last session #12 (2 unfinished tasks)                  │
    │                                                            │
    │   next steps:                                              │
-   │     1. my-resume   → continue what you were doing          │
-   │     2. my-scan .   → refresh project state                 │
-   │     3. my-chat     → ask the agent anything                │
+   │     1. resume     → continue what you were doing          │
+   │     2. scan .     → refresh project state                 │
+   │     3. chat       → ask the agent anything                │
    └────────────────────────────────────────────────────────────┘
 ```
 
@@ -23,8 +23,8 @@ all stored locally on your phone, all free.
 
 - **Branded launch** — custom banner, `my-termux` prompt, status dashboard on every open.
 - **Named commands** instead of a bare terminal:
-  `my-termux`, `start-my-termux`, `my-chat`, `my-menu`, `my-status`, `my-scan`,
-  `my-sync`, `my-fix`, `my-export`, `my-resume`.
+  `termux`, `start`, `chat`, `menu`, `status`, `scan`,
+  `sync`, `fix`, `export`, `resume`.
 - **Free OpenRouter routing** with automatic fallback across free models
   (`deepseek/deepseek-chat-v3.1:free` → `google/gemini-2.0-flash-exp:free` →
   `meta-llama/llama-3.3-70b-instruct:free` → `openrouter/auto`).
@@ -66,7 +66,7 @@ a real filename, list the folder first — don't type `<some-photo>.jpg` literal
 
 ```bash
 ls ~/storage/shared/DCIM/Camera/
-my-media add ~/storage/shared/DCIM/Camera/IMG_<TAB>     # Tab auto-completes
+media add ~/storage/shared/DCIM/Camera/IMG_<TAB>     # Tab auto-completes
 ```
 
 ### What the installer does
@@ -90,18 +90,18 @@ Uninstall with `bash uninstall.sh` (asks before deleting data).
 
 | Command             | What it does                                                          |
 | ------------------- | --------------------------------------------------------------------- |
-| `my-termux`         | Show dashboard (banner + status + proactive next actions)             |
-| `start-my-termux`   | Auto-heal on boot, then dashboard                                     |
-| `my-chat`           | Enter interactive chat (streaming, free models)                       |
-| `my-menu`           | Numeric guided menu (settings, scan, sync, fix, export…)              |
-| `my-status`         | Same status card as the dashboard, no banner                          |
-| `my-scan [PATH]`    | Scan a project, detect kind + git, register it, set current           |
-| `my-sync [PATH]`    | `git status`; optional `--pull`, `--commit "msg"`, `--push`           |
-| `my-fix`            | Run diagnostics + safe self-repair; writes JSON log in `~/my-termux/logs/` |
-| `my-export [WHAT]`  | Export `session` / `config` / `project` to `/sdcard/MyTermux/exports/` |
-| `my-resume`         | Resume the last chat session (with full history)                      |
-| `my-media …`        | Local media vault: `add`, `list`, `info`, `open`, `rm`, `attach`, `capture`, `record` |
-| `my-cloud …`        | Optional Cloudinary sync: `setup`, `status`, `sync`, `up`, `pull`, `rm`, `list` |
+| `termux`            | Show dashboard (banner + status + proactive next actions)             |
+| `start`             | Auto-heal on boot, then dashboard                                     |
+| `chat`              | Enter interactive chat (streaming, free models)                       |
+| `menu`              | Numeric guided menu (settings, scan, sync, fix, export…)              |
+| `status`            | Same status card as the dashboard, no banner                          |
+| `scan [PATH]`       | Scan a project, detect kind + git, register it, set current           |
+| `sync [PATH]`       | `git status`; optional `--pull`, `--commit "msg"`, `--push`           |
+| `fix`               | Run diagnostics + safe self-repair; writes JSON log in `~/my-termux/logs/` |
+| `export [WHAT]`     | Export `session` / `config` / `project` to `/sdcard/MyTermux/exports/` |
+| `resume`            | Resume the last chat session (with full history)                      |
+| `media …`           | Local media vault: `add`, `list`, `info`, `open`, `rm`, `attach`, `capture`, `record` |
+| `cloud …`           | Optional Cloudinary sync: `setup`, `status`, `sync`, `up`, `pull`, `rm`, `list` |
 
 Inside chat, slash-commands work too: `/help /new /resume /project X /goal X /task X /suggest /q`.
 
@@ -110,14 +110,14 @@ Inside chat, slash-commands work too: `/help /new /resume /project X /goal X /ta
 ### Local vault (always on, offline, free)
 
 ```bash
-my-media add ~/Downloads/photo.jpg              # copy into ~/my-termux/media/images/
-my-media add ~/song.mp3 --tags "music,relax"    # tag on import
-my-media list --kind image                      # filter by kind
-my-media open 3                                 # open with phone's default app
-my-media capture                                # snap a photo (needs termux-api)
-my-media record 15                              # record 15s of audio
-my-media attach 3 --session 12 --project foo    # link media to a chat/project
-my-media rm 3 --keep-file                       # unregister but keep the file
+media add ~/Downloads/photo.jpg              # copy into ~/my-termux/media/images/
+media add ~/song.mp3 --tags "music,relax"    # tag on import
+media list --kind image                      # filter by kind
+media open 3                                 # open with phone's default app
+media capture                                # snap a photo (needs termux-api)
+media record 15                              # record 15s of audio
+media attach 3 --session 12 --project foo    # link media to a chat/project
+media rm 3 --keep-file                       # unregister but keep the file
 ```
 
 Files land under `~/my-termux/media/{images,video,audio,docs,other}/` and are
@@ -134,11 +134,11 @@ without it. When you're ready:
 2. From your Dashboard copy `cloud_name`, `api_key`, `api_secret`.
 3. Run:
    ```bash
-   my-cloud setup           # paste the three values once
-   my-cloud sync            # upload every un-synced local media asset
-   my-cloud list            # see what's in the cloud
-   my-cloud pull 12         # restore a specific asset back to the phone
-   my-cloud rm 12 --also-local   # delete from cloud (optionally locally too)
+   cloud setup           # paste the three values once
+   cloud sync            # upload every un-synced local media asset
+   cloud list            # see what's in the cloud
+   cloud pull 12         # restore a specific asset back to the phone
+   cloud rm 12 --also-local   # delete from cloud (optionally locally too)
    ```
 
 Behind the scenes:
