@@ -14,6 +14,8 @@ import time
 from typing import Optional
 
 from mytermux.ai_integration import AIClient, AIClientError
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+import sentry_sdk
 
 
 ROOT_DIR = Path(__file__).parent
@@ -25,11 +27,18 @@ client = None
 db = None
 memory_status_checks: List[Dict[str, Any]] = []
 
-# Basic in-process AI metrics (kept simple to avoid extra deps)
-ai_requests_total = 0
-ai_errors_total = 0
-ai_latency_sum = 0.0
-ai_latency_count = 0
+# Prometheus metrics
+AI_REQUESTS = Counter("ai_requests_total", "Total AI requests")
+AI_ERRORS = Counter("ai_errors_total", "Total AI errors")
+AI_LATENCY = Histogram("ai_latency_seconds", "AI request latency seconds")
+
+# Initialize Sentry if configured (optional)
+SENTRY_DSN = os.environ.get("SENTRY_DSN")
+if SENTRY_DSN:
+    try:
+        sentry_sdk.init(SENTRY_DSN)
+    except Exception:
+        logger.exception("Failed to initialize Sentry")
 
 logging.basicConfig(
     level=logging.INFO,
@@ -122,16 +131,12 @@ async def chat(request: ChatRequest):
         actions = ["Scan project", "Sync git", "Open media"]
 
         # Attempt to call configured AI endpoint for a richer reply.
-        global ai_requests_total, ai_errors_total, ai_latency_sum, ai_latency_count
         try:
             client = AIClient()
             payload = {"prompt": request.message}
-            start = time.time()
-            resp = await run_in_threadpool(client.send_request, payload)
-            elapsed = time.time() - start
-            ai_requests_total += 1
-            ai_latency_sum += elapsed
-            ai_latency_count += 1
+            with AI_LATENCY.time():
+                AI_REQUESTS.inc()
+                resp = await client.send_request_async(payload)
 
             # Accept common shapes from adapters
             if isinstance(resp, dict):
@@ -139,10 +144,10 @@ async def chat(request: ChatRequest):
                 suggestions = resp.get("suggestions", suggestions)
                 actions = resp.get("actions", actions)
         except AIClientError as exc:  # pragma: no cover - runtime behavior
-            ai_errors_total += 1
+            AI_ERRORS.inc()
             logger.warning("AI client error: %s", exc)
         except Exception as exc:  # pragma: no cover - defensive
-            ai_errors_total += 1
+            AI_ERRORS.inc()
             logger.exception("Unexpected error calling AI client: %s", exc)
 
     return ChatReply(reply=reply, suggestions=suggestions, actions=actions)
@@ -150,14 +155,25 @@ async def chat(request: ChatRequest):
 
 @api_router.get("/metrics")
 async def metrics():
-    avg_latency: Optional[float] = None
-    if ai_latency_count:
-        avg_latency = ai_latency_sum / ai_latency_count
-    return {
-        "ai_requests_total": ai_requests_total,
-        "ai_errors_total": ai_errors_total,
-        "ai_avg_latency_seconds": avg_latency,
-    }
+    # Expose Prometheus metrics
+    data = generate_latest()
+    return Response(content=data, media_type=CONTENT_TYPE_LATEST)
+
+
+@api_router.post("/scan")
+async def scan(target: Dict[str, Any]):
+    """Request a project scan plan from the AI service for a given target.
+
+    Payload example: {"target": "repo"}
+    """
+    try:
+        client = AIClient()
+        payload = {"prompt": f"Create a short actionable scan plan for {target.get('target', 'project')}"}
+        resp = await client.send_request_async(payload)
+        return resp
+    except Exception as exc:
+        logger.exception("Scan failed: %s", exc)
+        raise
 
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate):
