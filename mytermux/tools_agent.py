@@ -174,7 +174,11 @@ def _tool_git(args: Dict) -> str:
     if action == "pull":
         rc, out, err = git_ops.pull(repo)
         return _clip(out or err)
-    return f"error: unknown git action '{action}'. Allowed: status, log, diff, branch, commit, push, pull, clone."
+    if action == "sync":
+        auto_push = bool(args.get("auto_push", False))
+        info = git_ops.sync_repo(repo, auto_push=auto_push)
+        return _clip(f"branch: {info['branch']}\n{info['status']}\nsummary: {info['summary']}")
+    return f"error: unknown git action '{action}'. Allowed: status, log, diff, branch, commit, push, pull, clone, sync."
 
 
 def _tool_media_list(args: Dict) -> str:
@@ -306,7 +310,7 @@ REGISTRY: Dict[str, Tool] = {
                          _tool_scan_project, safety="safe"),
     "git": Tool("git",
                 "Git helper for local repos. Actions: status, log, diff, branch, commit, push, pull, clone.",
-                {"action": "status|log|diff|branch|commit|push|pull|clone", "path": "repo path", "message": "commit message", "remote": "remote name", "branch": "branch name", "url": "clone URL", "dest": "clone destination"},
+                {"action": "status|log|diff|branch|commit|push|pull|clone|sync", "path": "repo path", "message": "commit message", "remote": "remote name", "branch": "branch name", "url": "clone URL", "dest": "clone destination", "auto_push": "bool"},
                 _tool_git, safety="confirm"),
     "media_list": Tool("media_list",
                        "List entries in the local media vault.",

@@ -1,5 +1,6 @@
 """Smoke + unit tests for the my-termux package."""
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -145,6 +146,29 @@ def test_git_ops_inject_pat_https():
     assert _inject_pat("git@github.com:u/r.git", "tok") == "git@github.com:u/r.git"
     # no token → unchanged
     assert _inject_pat(url, "") == url
+
+
+def test_git_ops_sync_repo_updates_when_needed(tmp_path):
+    from mytermux import git_ops
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=repo, check=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+    (repo / "README.md").write_text("hello\n", encoding="utf-8")
+    subprocess.run(["git", "add", "README.md"], cwd=repo, check=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=repo, check=True)
+
+    status = git_ops.sync_repo(repo)
+    assert status["updated"] is False
+    assert status["ahead"] is False
+    assert status["behind"] is False
+
+    (repo / "README.md").write_text("world\n", encoding="utf-8")
+    status = git_ops.sync_repo(repo)
+    assert status["updated"] is False
+    assert status["dirty"] is True
 
 
 def test_notify_no_termux_api(monkeypatch):

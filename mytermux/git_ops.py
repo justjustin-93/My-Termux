@@ -83,3 +83,77 @@ def pull(repo: Path) -> Tuple[int, str, str]:
 def current_branch(repo: Path) -> str:
     rc, out, _ = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=repo)
     return out.strip() if rc == 0 else ""
+
+
+def sync_repo(repo: Path, remote: str = "origin", auto_push: bool = False) -> dict:
+    """Inspect and update a local git repo.
+
+    Returns a dict with keys: dirty, ahead, behind, updated, branch, status, summary.
+    If the repo is dirty or behind, it will attempt a pull/rebase and optionally a push.
+    """
+    repo = Path(repo).expanduser().resolve()
+    if not (repo / ".git").exists():
+        return {"dirty": False, "ahead": False, "behind": False, "updated": False,
+                "branch": "", "status": "not a git repo", "summary": "not a git repo"}
+
+    branch = current_branch(repo)
+    rc, out, err = run(["git", "status", "--porcelain"], cwd=repo)
+    dirty = bool((out or "").strip())
+
+    rc, out, err = run(["git", "rev-parse", "@{upstream}"], cwd=repo)
+    upstream_exists = rc == 0
+    ahead = False
+    behind = False
+    if upstream_exists:
+        rc, out, err = run(["git", "rev-list", "--left-right", "--count", "@{upstream}...HEAD"], cwd=repo)
+        if rc == 0:
+            left, right = 0, 0
+            try:
+                parts = out.split()
+                if len(parts) >= 2:
+                    left, right = int(parts[0]), int(parts[1])
+                ahead = right > 0
+                behind = left > 0
+            except ValueError:
+                ahead = False
+                behind = False
+
+    updated = False
+    summary_lines = []
+    if dirty:
+        summary_lines.append("local changes present")
+    if ahead:
+        summary_lines.append("ahead of upstream")
+    if behind:
+        summary_lines.append("behind upstream")
+
+    if behind and upstream_exists:
+        rc, out, err = pull(repo)
+        if rc == 0:
+            updated = True
+            summary_lines.append("pulled latest changes")
+        else:
+            summary_lines.append(f"pull failed: {err or out}")
+
+    if dirty and not updated and auto_push:
+        # leave dirty changes intact and report; no auto-commit/push by default
+        summary_lines.append("local changes left intact")
+
+    if auto_push and upstream_exists and not dirty and not behind and ahead:
+        rc, out, err = push(repo, remote=remote, branch=branch)
+        if rc == 0:
+            updated = True
+            summary_lines.append("pushed local commits")
+        else:
+            summary_lines.append(f"push failed: {err or out}")
+
+    status = run(["git", "status", "--short", "--branch"], cwd=repo)[1]
+    return {
+        "dirty": dirty,
+        "ahead": ahead,
+        "behind": behind,
+        "updated": updated,
+        "branch": branch,
+        "status": status,
+        "summary": "; ".join(summary_lines) if summary_lines else "up to date",
+    }

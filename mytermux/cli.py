@@ -80,8 +80,12 @@ def cmd_sync(args) -> int:
     if not (path / ".git").exists():
         print(f"[my-termux] {path} is not a git repo.")
         return 1
-    print(f"-- branch: {git_ops.current_branch(path)}")
-    print(git_ops.status(path))
+
+    info = git_ops.sync_repo(path, auto_push=bool(args.push))
+    print(f"-- branch: {info['branch']}")
+    print(info['status'])
+    print(f"[sync] {info['summary']}")
+
     if args.pull:
         rc, out, err = git_ops.pull(path)
         print(out or err)
