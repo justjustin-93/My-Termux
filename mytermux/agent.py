@@ -21,6 +21,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 from . import db, openrouter, planner
 from .memory import Conversation
 from .tools_agent import REGISTRY, describe_tools, is_dangerous, run_tool
+from mytermux.ai_integration import AIClient, AIClientError
+import asyncio
 
 
 MAX_HOPS = int(os.environ.get("MYTERMUX_AGENT_MAX_HOPS", "6"))
@@ -232,9 +234,24 @@ def run_turn(conv: Conversation, user_text: str,
         try:
             text, model = openrouter.chat_stream(messages, on_delta=on_delta)
         except RuntimeError as e:
+            # Primary streaming failed; attempt a synchronous fallback via configured AI service.
             print(f"\n[error] {e}")
             db.log("error", "agent", str(e))
-            return ""
+            try:
+                client = AIClient()
+                # run blocking send_request in a thread to avoid blocking event loop
+                resp = asyncio.run(asyncio.to_thread(client.send_request, {"prompt": followup_user_text}))
+                if isinstance(resp, dict):
+                    text = resp.get("reply") or resp.get("result") or resp.get("text") or ""
+                else:
+                    text = str(resp)
+                model = "ai-fallback"
+            except AIClientError as ai_exc:
+                print(f"[ai-fallback error] {ai_exc}")
+                return ""
+            except Exception as exc:
+                print(f"[ai-fallback unexpected] {exc}")
+                return ""
         sys.stdout.write("\n")
         sys.stdout.flush()
         last_model = model

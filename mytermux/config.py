@@ -118,3 +118,45 @@ def set_value(key: str, value: Any) -> Dict[str, Any]:
     cfg[key] = value
     save_config(cfg)
     return cfg
+
+
+def get_secret(key: str, default: Any = None) -> Any:
+    """Resolve a secret by checking (in order): env vars, local config, cloud secrets.
+
+    This helper prefers environment variables for runtime overrides. If a
+    cloud secret mechanism is configured (AWS_SECRETS_MANAGER_ARN), it will
+    attempt to fetch the secret value from AWS Secrets Manager as a best-effort
+    (requires `boto3` and appropriate IAM permissions).
+    """
+    # 1) environment variable
+    val = os.environ.get(key)
+    if val is not None:
+        return val
+
+    # 2) local config file
+    cfg = load_config()
+    if key in cfg and cfg[key]:
+        return cfg[key]
+
+    # 3) AWS Secrets Manager (optional)
+    arn = os.environ.get("AWS_SECRETS_MANAGER_ARN")
+    if arn:
+        try:
+            import boto3
+            client = boto3.client("secretsmanager")
+            # name may be passed as full arn or simple name
+            secret_name = arn
+            resp = client.get_secret_value(SecretId=secret_name)
+            secret_string = resp.get("SecretString")
+            if secret_string:
+                # assume JSON mapping of keys
+                try:
+                    import json as _json
+                    data = _json.loads(secret_string)
+                    return data.get(key, default)
+                except Exception:
+                    return secret_string
+        except Exception:
+            pass
+
+    return default

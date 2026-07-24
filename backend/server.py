@@ -1,4 +1,5 @@
 from fastapi import FastAPI, APIRouter
+from starlette.concurrency import run_in_threadpool
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -9,6 +10,10 @@ from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Dict, Any
 import uuid
 from datetime import datetime, timezone
+import time
+from typing import Optional
+
+from mytermux.ai_integration import AIClient, AIClientError
 
 
 ROOT_DIR = Path(__file__).parent
@@ -19,6 +24,12 @@ mongo_url = os.environ.get('MONGO_URL')
 client = None
 db = None
 memory_status_checks: List[Dict[str, Any]] = []
+
+# Basic in-process AI metrics (kept simple to avoid extra deps)
+ai_requests_total = 0
+ai_errors_total = 0
+ai_latency_sum = 0.0
+ai_latency_count = 0
 
 logging.basicConfig(
     level=logging.INFO,
@@ -105,11 +116,48 @@ async def chat(request: ChatRequest):
         suggestions = ["Check diagnostics", "Rebuild the local workspace", "Back up config"]
         actions = ["Run repair", "Back up config"]
     else:
+        # Use external AI service when available for open-ended queries.
         reply = "I can help with project scans, git sync, media organization, or workspace repair. Tell me what you want to tackle next."
         suggestions = ["Scan the current project", "Sync changes", "Open the media vault"]
         actions = ["Scan project", "Sync git", "Open media"]
 
+        # Attempt to call configured AI endpoint for a richer reply.
+        global ai_requests_total, ai_errors_total, ai_latency_sum, ai_latency_count
+        try:
+            client = AIClient()
+            payload = {"prompt": request.message}
+            start = time.time()
+            resp = await run_in_threadpool(client.send_request, payload)
+            elapsed = time.time() - start
+            ai_requests_total += 1
+            ai_latency_sum += elapsed
+            ai_latency_count += 1
+
+            # Accept common shapes from adapters
+            if isinstance(resp, dict):
+                reply = resp.get("reply") or resp.get("result") or resp.get("text") or reply
+                suggestions = resp.get("suggestions", suggestions)
+                actions = resp.get("actions", actions)
+        except AIClientError as exc:  # pragma: no cover - runtime behavior
+            ai_errors_total += 1
+            logger.warning("AI client error: %s", exc)
+        except Exception as exc:  # pragma: no cover - defensive
+            ai_errors_total += 1
+            logger.exception("Unexpected error calling AI client: %s", exc)
+
     return ChatReply(reply=reply, suggestions=suggestions, actions=actions)
+
+
+@api_router.get("/metrics")
+async def metrics():
+    avg_latency: Optional[float] = None
+    if ai_latency_count:
+        avg_latency = ai_latency_sum / ai_latency_count
+    return {
+        "ai_requests_total": ai_requests_total,
+        "ai_errors_total": ai_errors_total,
+        "ai_avg_latency_seconds": avg_latency,
+    }
 
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate):
