@@ -8,23 +8,28 @@ set -e
 APP_DIR="${MYTERMUX_APP_DIR:-$HOME/my-termux/app}"
 PY="${MYTERMUX_PYTHON:-python}"
 
-# figure out what we were called as (my-chat -> chat, start-my-termux -> start, etc.)
+# Determine invocation name and normalize it so both old `my-` prefixed
+# names and new unprefixed names work. Examples: my-chat -> chat, chat -> chat
 self="$(basename "$0")"
-case "$self" in
-    my-termux)         sub="dashboard" ;;
-    start-my-termux)   sub="start" ;;
-    my-chat)           sub="chat" ;;
-    my-menu)           sub="menu" ;;
-    my-status)         sub="status" ;;
-    my-scan)           sub="scan" ;;
-    my-sync)           sub="sync" ;;
-    my-fix)            sub="fix" ;;
-    my-export)         sub="export" ;;
-    my-import)         sub="import" ;;
-    my-resume)         sub="resume" ;;
-    my-media)          sub="media" ;;
-    my-cloud)          sub="cloud" ;;
-    *)                 sub="dashboard" ;;
+# strip leading start- and my- prefixes if present
+norm="${self#start-}"
+norm="${norm#my-}"
+
+case "$norm" in
+    termux|termux-dispatch|my-termux|dashboard) sub="dashboard" ;;
+    start)   sub="start" ;;
+    chat)    sub="chat" ;;
+    menu)    sub="menu" ;;
+    status)  sub="status" ;;
+    scan)    sub="scan" ;;
+    sync)    sub="sync" ;;
+    fix)     sub="fix" ;;
+    export)  sub="export" ;;
+    import)  sub="import" ;;
+    resume)  sub="resume" ;;
+    media)   sub="media" ;;
+    cloud)   sub="cloud" ;;
+    *)       sub="dashboard" ;;
 esac
 
 # make sure the source tree is importable

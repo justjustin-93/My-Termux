@@ -375,7 +375,7 @@ def cmd_cloud(args) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="my-termux", description="my-termux AI workspace")
+    p = argparse.ArgumentParser(prog="termux", description="Termux AI workspace")
     sub = p.add_subparsers(dest="cmd")
 
     sub.add_parser("dashboard").set_defaults(func=cmd_dashboard)

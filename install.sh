@@ -24,7 +24,7 @@ if [ -t 1 ]; then
 else
     C_RESET=""; C_BOLD=""; C_CYAN=""; C_GREEN=""; C_YELLOW=""; C_RED=""; C_DIM=""
 fi
-say()    { printf "%b[my-termux]%b %s\n" "$C_CYAN$C_BOLD" "$C_RESET" "$*"; }
+say()    { printf "%b[Termux]%b %s\n" "$C_CYAN$C_BOLD" "$C_RESET" "$*"; }
 ok()     { printf "%b   ✓%b %s\n" "$C_GREEN" "$C_RESET" "$*"; }
 warn()   { printf "%b   !%b %s\n" "$C_YELLOW" "$C_RESET" "$*"; }
 fail()   { printf "%b   ✗%b %s\n" "$C_RED" "$C_RESET" "$*"; }
@@ -104,11 +104,11 @@ fi
 say "installing python dependencies"
 python -m pip install --upgrade pip >/dev/null 2>&1 || warn "pip upgrade skipped"
 python -m pip install --quiet --upgrade httpx rich pyyaml cloudinary && ok "httpx, rich, pyyaml, cloudinary installed" \
-    || warn "some pip installs failed; run \`my-fix\` later"
+    || warn "some pip installs failed; run \`fix\` later"
 
 # ---------- 7. install global commands ----------
 say "installing commands into $BIN_DIR"
-COMMANDS=(my-termux start-my-termux my-chat my-menu my-status my-scan my-sync my-fix my-export my-import my-resume my-media my-cloud)
+COMMANDS=(termux start chat menu status scan sync fix export import resume media cloud)
 for c in "${COMMANDS[@]}"; do
     ln -sf "$APP_DIR/bin/mytermux-dispatch" "$BIN_DIR/$c"
     ok "$c"
@@ -196,11 +196,11 @@ PY
 # ---------- 10. done ----------
 say "installation complete!"
 echo ""
-echo -e "  ${C_BOLD}Try these now:${C_RESET}"
-echo -e "    ${C_GREEN}my-termux${C_RESET}         open dashboard"
-echo -e "    ${C_GREEN}my-chat${C_RESET}           start chatting"
-echo -e "    ${C_GREEN}my-menu${C_RESET}           guided menu"
-echo -e "    ${C_GREEN}my-fix${C_RESET}            self-heal"
+    echo -e "  ${C_BOLD}Try these now:${C_RESET}"
+    echo -e "    ${C_GREEN}termux${C_RESET}         open dashboard"
+    echo -e "    ${C_GREEN}chat${C_RESET}           start chatting"
+    echo -e "    ${C_GREEN}menu${C_RESET}           guided menu"
+    echo -e "    ${C_GREEN}fix${C_RESET}            self-heal"
 echo ""
 echo -e "  ${C_DIM}Config:    ~/my-termux/config/config.yaml${C_RESET}"
 echo -e "  ${C_DIM}Data:      ~/my-termux/{projects,sessions,logs,backups}${C_RESET}"
